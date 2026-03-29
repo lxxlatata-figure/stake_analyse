@@ -1,0 +1,137 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>杭州上市公司财报分析台</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <section class="hero">
+      <div class="hero-top">
+        <span class="eyebrow">HANGZHOU EARNINGS INTELLIGENCE</span>
+        <div class="hero-status" :class="state.status">[[ prettyStatus ]]</div>
+      </div>
+      <h1>杭州上市公司财报分析台</h1>
+      <p class="hero-copy"></p>
+
+      <div class="toolbar">
+        <label class="select-box">
+          <span>抓取范围</span>
+          <select v-model="selectedLimit">
+            <option value="5" style="color: #000;">5 份</option>
+            <option value="10" style="color: #000;">10 份</option>
+            <option value="all" style="color: #000;">全部</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" @click="startRun(false)">开始抓取并分析</button>
+        <button class="btn btn-secondary" @click="startRun(true)">强制重新分析</button>
+        <button class="btn btn-danger" @click="clearCurrentList">清空当前列表</button>
+        <button class="btn btn-ghost" @click="refreshAll">刷新数据</button>
+      </div>
+
+      <div class="hero-metrics">
+        <article class="metric-card">
+          <span>抓取进度</span>
+          <strong>[[ state.fetched || 0 ]] / [[ state.fetch_total || 0 ]]</strong>
+        </article>
+        <article class="metric-card">
+          <span>分析进度</span>
+          <strong>[[ state.analyzed || 0 ]] / [[ state.analyze_total || 0 ]]</strong>
+        </article>
+        <article class="metric-card">
+          <span>运行阶段</span>
+          <strong>[[ state.phase || 'waiting' ]]</strong>
+        </article>
+        <article class="metric-card">
+          <span>最近运行</span>
+          <strong class="small">[[ state.last_run || '未执行' ]]</strong>
+        </article>
+      </div>
+    </section>
+
+    <section class="board">
+      <aside class="panel pdf-panel">
+        <div class="panel-head">
+          <div>
+            <h2>已抓取 PDF</h2>
+            <p>抓到一份就先显示一份</p>
+          </div>
+          <span>[[ pdfRecords.length ]] 条</span>
+        </div>
+        <div class="panel-list">
+          <article v-for="item in pdfRecords" :key="item.stock_code + item.title" class="pdf-card">
+            <div class="pdf-card__top">
+              <h3>[[ item.company_name || item.stock_code ]]</h3>
+              <span class="stage-pill" :class="stageClass(item.stage)">[[ item.stage || 'downloaded' ]]</span>
+            </div>
+            <p class="meta">[[ item.title ]]</p>
+            <p class="meta">公告日期：[[ item.published_at || '未知' ]]</p>
+            <a class="pdf-link" :href="pdfUrl(item)" target="_blank">查看 PDF</a>
+          </article>
+          <div v-if="!pdfRecords.length" class="empty-box">还没有抓取到 PDF。</div>
+        </div>
+      </aside>
+
+      <main class="panel analysis-panel">
+        <div class="panel-head">
+          <div>
+            <h2>DeepSeek 股价预估</h2>
+            <p>默认折叠，需要时再展开详情</p>
+          </div>
+          <span>[[ analysisRecords.length ]] 条</span>
+        </div>
+        <div class="analysis-list">
+          <details v-for="item in analysisRecords" :key="item.stock_code + item.title + '-analysis'" class="analysis-card">
+            <summary>
+              <div class="summary-main">
+                <div>
+                  <h3>[[ item.company_name || item.stock_code ]]</h3>
+                  <p class="meta">[[ item.title ]]</p>
+                </div>
+                <div class="summary-badges">
+                  <span class="view-pill" :class="viewClass(item.deepseek_result?.price_view)">
+                    [[ item.deepseek_result?.price_view || '未生成' ]]
+                  </span>
+                  <span class="range-pill">[[ item.deepseek_result?.expected_range || '未知区间' ]]</span>
+                  <span class="confidence-pill">置信度 [[ item.deepseek_result?.confidence ?? '--' ]]</span>
+                </div>
+              </div>
+            </summary>
+            <div class="detail-grid">
+              <section>
+                <div class="block-title">股价预估</div>
+                <div class="detail-content emphasis">
+                  [[ item.deepseek_result?.price_prediction || item.deepseek_result?.short_reason || '暂无分析结果' ]]
+                </div>
+              </section>
+              <section>
+                <div class="block-title">一句话概括</div>
+                <div class="detail-content">[[ item.deepseek_result?.short_reason || '暂无' ]]</div>
+              </section>
+              <section>
+                <div class="block-title">利多因素</div>
+                <div class="detail-content">[[ formatList(item.deepseek_result?.bull_points) ]]</div>
+              </section>
+              <section>
+                <div class="block-title">利空因素</div>
+                <div class="detail-content">[[ formatList(item.deepseek_result?.bear_points) ]]</div>
+              </section>
+              <section class="summary-span">
+                <div class="block-title">本地摘要</div>
+                <div class="detail-content mono">[[ item.local_summary || '暂无摘要' ]]</div>
+              </section>
+            </div>
+          </details>
+          <div v-if="!analysisRecords.length" class="empty-box">分析完成的结果会在这里出现。</div>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
